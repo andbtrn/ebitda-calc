@@ -120,10 +120,12 @@ export function useYear(initialYear?: number): UseYearReturn {
           .returns<Ledger[]>(),
       ])
 
+      const yearConfigData = yearConfig as { config: Config } | null
+
       setMonths(monthsData || [])
       setQuarters(quartersData || [])
       setYearData(yearDataResult)
-      setConfig(yearConfig?.config || null)
+      setConfig(yearConfigData?.config || null)
       setLedger(ledgerData || [])
 
       // Рассчитываем текущий баланс банка
