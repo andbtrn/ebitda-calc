@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, CellClassParams, ICellRendererParams, ValueFormatterParams } from 'ag-grid-community'
 import { themeQuartz } from 'ag-grid-community'
+import Swal from 'sweetalert2'
 import { useWorkspace } from '../contexts/WorkspaceContext'
 import { useYear } from '../hooks/useYear'
 import {
@@ -34,12 +35,15 @@ const notionTheme = themeQuartz.withParams({
 
 interface MonthRow extends Month {
   monthName: string
+  isQuarterHeader?: boolean
+  quarter?: number
 }
 
 export default function Months() {
   const { currentWorkspace, isAdmin } = useWorkspace()
   const currentYear = new Date().getFullYear()
   const [selectedYear, setSelectedYear] = useState(currentYear)
+  const availableYears = [currentYear - 1, currentYear, currentYear + 1]
 
   const {
     months,
@@ -130,6 +134,34 @@ export default function Months() {
     setSaving(false)
   }, [currentWorkspace, isAdmin, selectedYear, refresh])
 
+  const handleClearRow = useCallback(async (month: number) => {
+    if (!currentWorkspace || !isAdmin || yearData?.closed) return
+    const confirmResult = await Swal.fire({
+      title: 'Очистить строку?',
+      text: 'Вы уверены, что хотите очистить строку?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Очистить',
+      cancelButtonText: 'Отмена',
+      confirmButtonColor: '#e03e3e',
+      focusCancel: true,
+    })
+    if (!confirmResult.isConfirmed) return
+
+    setSaving(true)
+    setActionError(null)
+
+    const result = await updateMonthEbitda(currentWorkspace.id, selectedYear, month, null, null)
+
+    if (!result.success) {
+      setActionError(result.error?.message || 'Ошибка очистки')
+    } else {
+      await refresh()
+    }
+
+    setSaving(false)
+  }, [currentWorkspace, isAdmin, yearData?.closed, selectedYear, refresh])
+
   const handleRecalculate = async () => {
     setSaving(true)
     setActionError(null)
@@ -156,24 +188,119 @@ export default function Months() {
     setSaving(false)
   }
 
-  // Prepare row data with month names
+  const quarterNames: Record<number, string> = {
+    1: 'Янв–Мар',
+    2: 'Апр–Июн',
+    3: 'Июл–Сен',
+    4: 'Окт–Дек',
+  }
+
+  // Prepare row data with quarter headers
   const rowData = useMemo<MonthRow[]>(() => {
-    return months.map((m) => ({
-      ...m,
-      monthName: MONTH_NAMES[m.month - 1],
-    }))
-  }, [months])
+    const sortedMonths = [...months].sort((a, b) => a.month - b.month)
+    const rows: MonthRow[] = []
+    const workspaceId = currentWorkspace?.id || ''
+    const now = new Date().toISOString()
+
+    for (let quarter = 1; quarter <= 4; quarter += 1) {
+      const quarterMonths = sortedMonths.filter(
+        (m) => Math.floor((m.month - 1) / 3) + 1 === quarter
+      )
+      if (quarterMonths.length === 0) continue
+
+      const quarterEbitda = quarterMonths.reduce((sum, m) => sum + (m.ebitda || 0), 0)
+      const quarterMonthlyBase = quarterMonths.reduce((sum, m) => sum + (m.monthly_base || 0), 0)
+      const quarterMonthlyThreshold = quarterMonths.reduce((sum, m) => sum + (m.monthly_threshold || 0), 0)
+      const quarterRetention = quarterMonths.reduce((sum, m) => sum + m.retention, 0)
+      const quarterGrowth = quarterMonths.reduce((sum, m) => sum + m.growth_bonus, 0)
+
+      rows.push({
+        id: `quarter-${selectedYear}-${quarter}`,
+        workspace_id: workspaceId,
+        year: selectedYear,
+        month: 0,
+        ebitda: quarterEbitda,
+        comment: null,
+        locked: true,
+        config_id: null,
+        monthly_base: quarterMonthlyBase,
+        monthly_threshold: quarterMonthlyThreshold,
+        retention: quarterRetention,
+        growth_bonus: quarterGrowth,
+        total_bonus: 0,
+        paid_now: 0,
+        to_bank: 0,
+        bank_balance_after: 0,
+        created_at: now,
+        updated_at: now,
+        monthName: `Q${quarter} ${quarterNames[quarter]}`,
+        isQuarterHeader: true,
+        quarter,
+      })
+
+      quarterMonths.forEach((m) => {
+        rows.push({
+          ...m,
+          monthName: MONTH_NAMES[m.month - 1],
+        })
+      })
+    }
+
+    return rows
+  }, [months, currentWorkspace?.id, selectedYear])
 
   // Money formatter
   const moneyFormatter = (params: ValueFormatterParams) => {
+    if (params.data?.isQuarterHeader) {
+      const field = params.colDef.field
+      if (field !== 'retention' && field !== 'growth_bonus' && field !== 'monthly_base' && field !== 'monthly_threshold') {
+        return ''
+      }
+    }
     if (params.value === null || params.value === undefined) return '—'
     return formatMoney(params.value)
   }
+
+  const MonthNameCellRenderer = useCallback((params: ICellRendererParams<MonthRow>) => {
+    const data = params.data
+    if (!data) return null
+    if (data.isQuarterHeader) {
+      return <span className="quarter-row-title">{data.monthName}</span>
+    }
+    return <span>{data.monthName}</span>
+  }, [])
+
+  const TargetCellRenderer = useCallback((params: ICellRendererParams<MonthRow>) => {
+    const data = params.data
+    if (!data) return null
+
+    const targetValue = typeof params.value === 'number' ? params.value : null
+    if (targetValue === null || targetValue === 0) {
+      return <span className="text-muted">—</span>
+    }
+
+    const progress = data.ebitda && targetValue > 0
+      ? Math.min((data.ebitda / targetValue) * 100, 100)
+      : 0
+
+    return (
+      <div className="target-cell">
+        <span className="target-cell-value">{formatMoney(targetValue)}</span>
+        <div className="target-cell-bar">
+          <div className="target-cell-bar-fill" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+    )
+  }, [moneyFormatter])
 
   // EBITDA cell renderer with click-to-edit
   const EbitdaCellRenderer = useCallback((params: ICellRendererParams<MonthRow>) => {
     const data = params.data
     if (!data) return null
+
+    if (data.isQuarterHeader) {
+      return <span className="ebitda-cell-value quarter-row-value">{formatMoney(data.ebitda || 0)}</span>
+    }
 
     const canEdit = !data.locked && !yearData?.closed && isAdmin
 
@@ -182,11 +309,8 @@ export default function Months() {
         onClick={() => canEdit && handleOpenEditModal(data.month, data.ebitda)}
         style={{
           cursor: canEdit ? 'pointer' : 'default',
-          padding: '4px 8px',
-          borderRadius: '3px',
-          display: 'inline-block',
         }}
-        className={canEdit ? 'input-inline' : ''}
+        className={`ebitda-cell-value${canEdit ? ' input-inline' : ''}`}
       >
         {data.ebitda !== null ? formatMoney(data.ebitda) : '—'}
       </span>
@@ -198,23 +322,41 @@ export default function Months() {
     const data = params.data
     if (!data) return null
 
+    if (data.isQuarterHeader) return null
+
+    if (data.month === 0 || data.id === 'total') {
+      return null
+    }
+
     if (yearData?.closed) {
       return <span>🔒</span>
     }
 
     if (!isAdmin) return null
 
+    const canClear = !data.locked
+
     return (
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={() => handleToggleLock(data.month, data.locked)}
-        title={data.locked ? 'Разблокировать' : 'Заблокировать'}
-        disabled={saving}
-      >
-        {data.locked ? '🔒' : '🔓'}
-      </button>
+      <div className="flex gap-sm">
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => handleToggleLock(data.month, data.locked)}
+          title={data.locked ? 'Разблокировать' : 'Заблокировать'}
+          disabled={saving}
+        >
+          {data.locked ? '🔒' : '🔓'}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => handleClearRow(data.month)}
+          title="Очистить строку"
+          disabled={saving || !canClear}
+        >
+          🗑
+        </button>
+      </div>
     )
-  }, [isAdmin, yearData?.closed, saving, handleToggleLock])
+  }, [isAdmin, yearData?.closed, saving, handleToggleLock, handleClearRow])
 
   // Column definitions
   const columnDefs = useMemo((): ColDef<MonthRow>[] => {
@@ -224,12 +366,15 @@ export default function Months() {
         headerName: 'Месяц',
         width: 120,
         pinned: 'left',
+        flex: 0,
+        cellRenderer: MonthNameCellRenderer,
         cellStyle: { fontWeight: '600' },
       },
       {
         field: 'ebitda',
         headerName: 'EBITDA',
         width: 130,
+        flex: 1,
         cellRenderer: EbitdaCellRenderer,
         cellClass: (params: CellClassParams<MonthRow>) => {
           return params.data?.ebitda === null ? 'ag-cell-empty' : ''
@@ -237,68 +382,84 @@ export default function Months() {
       },
       {
         field: 'monthly_base',
-        headerName: 'База',
+        headerName: 'Цель удержания',
         width: 110,
-        valueFormatter: moneyFormatter,
+        flex: 1,
+        cellRenderer: TargetCellRenderer,
         cellStyle: { color: '#9b9a97' },
-        type: 'rightAligned',
+      },
+      {
+        field: 'monthly_threshold',
+        headerName: 'Цель роста',
+        width: 110,
+        flex: 1,
+        cellRenderer: TargetCellRenderer,
+        cellStyle: { color: '#9b9a97' },
       },
       {
         field: 'retention',
         headerName: 'Удержание',
         width: 110,
+        flex: 1,
         valueFormatter: moneyFormatter,
-        type: 'rightAligned',
       },
       {
         field: 'growth_bonus',
         headerName: 'Рост',
         width: 110,
+        flex: 1,
         valueFormatter: moneyFormatter,
-        type: 'rightAligned',
       },
       {
         field: 'total_bonus',
         headerName: 'Бонус',
         width: 110,
+        flex: 1,
         valueFormatter: moneyFormatter,
         cellStyle: { fontWeight: '600' },
-        type: 'rightAligned',
       },
       {
         field: 'paid_now',
         headerName: 'Сейчас',
         width: 110,
+        flex: 1,
         valueFormatter: moneyFormatter,
-        type: 'rightAligned',
       },
       {
         field: 'to_bank',
         headerName: 'В банк',
         width: 110,
+        flex: 1,
         valueFormatter: moneyFormatter,
-        type: 'rightAligned',
       },
       {
         field: 'locked',
         headerName: '',
-        width: 60,
+        width: 120,
+        flex: 0,
         cellRenderer: LockCellRenderer,
+        cellClass: 'month-actions-cell',
         sortable: false,
         filter: false,
       },
     ]
     return cols
-  }, [EbitdaCellRenderer, LockCellRenderer])
+  }, [EbitdaCellRenderer, LockCellRenderer, MonthNameCellRenderer, TargetCellRenderer])
 
   // Default column settings
   const defaultColDef = useMemo<ColDef>(() => ({
     sortable: true,
     resizable: true,
+    flex: 1,
+    minWidth: 100,
+    cellStyle: { textAlign: 'left' },
   }), [])
 
   // Row class rules for locked rows
   const getRowClass = useCallback((params: { data?: MonthRow }) => {
+    if (params.data?.isQuarterHeader) {
+      return 'ag-row-quarter'
+    }
     if (params.data?.locked) {
       return 'ag-row-locked'
     }
@@ -357,18 +518,6 @@ export default function Months() {
           <p className="page-subtitle">{currentWorkspace?.name}</p>
         </div>
         <div className="flex gap-md">
-          <select
-            className="select"
-            style={{ width: 'auto' }}
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-          >
-            {[currentYear - 1, currentYear, currentYear + 1].map((y) => (
-              <option key={y} value={y}>
-                {y} год
-              </option>
-            ))}
-          </select>
           {initialized && isAdmin && (
             <button className="btn btn-secondary" onClick={handleRecalculate} disabled={saving}>
               Пересчитать
@@ -405,6 +554,21 @@ export default function Months() {
         </div>
       )}
 
+      <div className="year-tabs" role="tablist" aria-label="Выбор года">
+        {availableYears.map((year) => (
+          <button
+            key={year}
+            type="button"
+            role="tab"
+            aria-selected={year === selectedYear}
+            className={`year-tab ${year === selectedYear ? 'is-active' : ''}`}
+            onClick={() => setSelectedYear(year)}
+          >
+            {year} год
+          </button>
+        ))}
+      </div>
+
       {!initialized ? (
         <div className="card" style={{ textAlign: 'center', padding: 'var(--spacing-2xl)' }}>
           <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Год {selectedYear} не инициализирован</h2>
@@ -416,7 +580,7 @@ export default function Months() {
           </button>
         </div>
       ) : (
-        <div className="ag-grid-wrapper" style={{ height: 'calc(12 * 42px + 90px)' }}>
+        <div className="ag-grid-wrapper">
           <AgGridReact<MonthRow>
             theme={notionTheme}
             rowData={rowData}
@@ -424,7 +588,7 @@ export default function Months() {
             defaultColDef={defaultColDef}
             getRowClass={getRowClass}
             pinnedBottomRowData={pinnedBottomRowData}
-            domLayout="normal"
+            domLayout="autoHeight"
             suppressMovableColumns={true}
             suppressCellFocus={true}
             animateRows={false}

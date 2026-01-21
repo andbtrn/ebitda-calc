@@ -52,10 +52,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     try {
       // Получаем memberships пользователя
-      const { data: memberships, error: membershipError } = await supabase
+      const { data: memberships, error: membershipError } = (await supabase
         .from('memberships')
         .select('*, workspace:workspaces(*)')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id)) as {
+        data: (Membership & { workspace: Workspace })[] | null
+        error: unknown
+      }
 
       if (membershipError) throw membershipError
 
@@ -114,6 +117,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         .eq('user_id', user.id)
         .eq('workspace_id', workspace.id)
         .single()
+        .returns<Membership>()
 
       setCurrentMembership(memberships)
     }

@@ -211,7 +211,6 @@ body {
 }
 
 .input-inline {
-  padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid transparent;
   background-color: transparent;
   border-radius: var(--radius-sm);
@@ -224,6 +223,11 @@ body {
 .input-inline:focus {
   background-color: var(--color-bg);
   border-color: var(--color-primary);
+}
+
+.ebitda-cell-value {
+  display: inline-block;
+  padding: var(--spacing-xs) var(--spacing-sm);
 }
 
 /* Таблицы */
@@ -572,6 +576,43 @@ body {
   box-shadow: 0 0 0 3px rgba(35, 131, 226, 0.15);
 }
 
+/* Годовые табы */
+.year-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.year-tab {
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: all 0.15s ease;
+}
+
+.year-tab:hover {
+  color: var(--color-text);
+  background-color: var(--color-bg-hover);
+}
+
+.year-tab.is-active {
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border-color: var(--color-border);
+  border-bottom-color: var(--color-bg);
+  box-shadow: none;
+  padding-top: calc(var(--spacing-xs) + 4px);
+}
+
 /* Чекбокс / Переключатель */
 .toggle-group {
   display: flex;
@@ -810,9 +851,24 @@ body {
 
 .quarter-progress-compact-header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
+}
+
+.quarter-progress-compact-header-left {
+  display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+}
+
+.quarter-progress-compact-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .quarter-progress-compact-title {
@@ -902,6 +958,76 @@ body {
 .ag-grid-wrapper {
   border-radius: var(--radius-md);
   overflow: hidden;
+  width: 100%;
+}
+
+.ag-cell {
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.ag-right-aligned-cell {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.ag-cell-value {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.ag-cell-wrapper {
+  align-items: center;
+  height: 100%;
+}
+
+.month-actions-cell .ag-cell-wrapper {
+  justify-content: center;
+}
+
+.ag-row-quarter {
+  background-color: var(--color-bg-secondary) !important;
+  font-weight: 600;
+}
+
+.quarter-row-title {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.quarter-row-value {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.target-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.target-cell-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  line-height: 20px;
+}
+
+.target-cell-bar {
+  height: 3px;
+  background-color: #e3e3e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.target-cell-bar-fill {
+  height: 100%;
+  background-color: #63b234;
+  border-radius: 3px;
+  transition: width 0.3s ease;
 }
 
 /* Empty EBITDA cell highlight */

@@ -21,7 +21,7 @@ export async function rpcCall<T>(
   functionName: string,
   params: Record<string, unknown>
 ): Promise<RPCResponse<T>> {
-  const { data, error } = await supabase.rpc(functionName, params)
+  const { data, error } = await supabase.rpc(functionName as any, params as any)
 
   if (error) {
     console.error('RPC Error:', error)
@@ -51,7 +51,7 @@ export async function updateMonthEbitda(
   year: number,
   month: number,
   ebitda: number | null,
-  comment?: string
+  comment?: string | null
 ) {
   return rpcCall('update_month_ebitda', {
     p_workspace_id: workspaceId,

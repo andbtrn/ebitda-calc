@@ -143,14 +143,10 @@ export default function Dashboard() {
                   ebitdaSum={q.ebitda_sum}
                   retentionTarget={q.condition_threshold}
                   growthTarget={(yearData?.condition_threshold || 0) / 4}
-                />
-                <div className="card mb-lg" style={{ marginTop: '-8px', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-                  <div className="flex-between">
-                    <div className="flex gap-md" style={{ alignItems: 'center' }}>
+                  headerRight={(
+                    <>
                       <span className="text-muted">К выплате:</span>
                       <strong>{formatMoney(q.payout_available)}</strong>
-                    </div>
-                    <div>
                       {q.payout_done ? (
                         <span className="badge badge-success">✓ Выплачено</span>
                       ) : q.condition_met ? (
@@ -158,9 +154,9 @@ export default function Dashboard() {
                       ) : (
                         <span className="badge badge-neutral">Ожидание</span>
                       )}
-                    </div>
-                  </div>
-                </div>
+                    </>
+                  )}
+                />
               </div>
             ))}
           </div>

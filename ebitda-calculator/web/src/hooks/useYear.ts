@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, initYear, recalculateYear } from '../lib/supabase'
 import { useWorkspace } from '../contexts/WorkspaceContext'
-import type { Month, Quarter, Year, Config, Ledger } from '../types/database'
+import type { Month, Quarter, Year, Config, Ledger, Database } from '../types/database'
 
 interface UseYearReturn {
   year: number
@@ -86,19 +86,22 @@ export function useYear(initialYear?: number): UseYearReturn {
           .select('*')
           .eq('workspace_id', workspaceId)
           .eq('year', year)
-          .order('month'),
+          .order('month')
+          .returns<Month[]>(),
         supabase
           .from('quarters')
           .select('*')
           .eq('workspace_id', workspaceId)
           .eq('year', year)
-          .order('quarter'),
+          .order('quarter')
+          .returns<Quarter[]>(),
         supabase
           .from('years')
           .select('*')
           .eq('workspace_id', workspaceId)
           .eq('year', year)
-          .single(),
+          .single()
+          .returns<Year>(),
         supabase
           .from('year_configs')
           .select('*, config:configs(*)')
@@ -106,19 +109,21 @@ export function useYear(initialYear?: number): UseYearReturn {
           .eq('year', year)
           .order('effective_from_month')
           .limit(1)
-          .single(),
+          .single()
+          .returns<(Database['public']['Tables']['year_configs']['Row'] & { config: Config })>(),
         supabase
           .from('ledger')
           .select('*')
           .eq('workspace_id', workspaceId)
           .eq('year', year)
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .returns<Ledger[]>(),
       ])
 
       setMonths(monthsData || [])
       setQuarters(quartersData || [])
       setYearData(yearDataResult)
-      setConfig(yearConfig?.config as unknown as Config || null)
+      setConfig(yearConfig?.config || null)
       setLedger(ledgerData || [])
 
       // Рассчитываем текущий баланс банка
