@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import { AgGridReact } from 'ag-grid-react'
+import type { ColDef, ValueFormatterParams, ICellRendererParams } from 'ag-grid-community'
+import { themeQuartz } from 'ag-grid-community'
 import { useWorkspace } from '../contexts/WorkspaceContext'
 import { useYear } from '../hooks/useYear'
 import {
@@ -9,6 +12,25 @@ import {
   adjustBank,
   parseMoney,
 } from '../lib/supabase'
+import QuarterProgress from '../components/QuarterProgress'
+import type { Ledger } from '../types/database'
+
+// Custom theme based on Quartz with Notion-like styling
+const notionTheme = themeQuartz.withParams({
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+  fontSize: 13,
+  headerFontSize: 12,
+  headerFontWeight: 500,
+  headerTextColor: '#6b6b6b',
+  headerBackgroundColor: '#f7f6f3',
+  borderColor: '#e9e9e7',
+  rowHoverColor: '#f1f1ef',
+  selectedRowBackgroundColor: '#e8f4fd',
+  cellTextColor: '#37352f',
+  oddRowBackgroundColor: '#ffffff',
+  spacing: 8,
+  wrapperBorderRadius: 6,
+})
 
 export default function Bank() {
   const { currentWorkspace, isAdmin } = useWorkspace()
@@ -36,7 +58,13 @@ export default function Bank() {
     type: 'quarter' | 'year' | 'adjust' | null
     quarter?: number
     amount?: number
+    maxAmount?: number
   }>({ type: null })
+
+  // Форма квартальной выплаты
+  const [quarterPayoutAmount, setQuarterPayoutAmount] = useState('')
+  const [quarterPayoutComment, setQuarterPayoutComment] = useState('')
+  const [quarterPayoutError, setQuarterPayoutError] = useState<string | null>(null)
 
   // Форма корректировки
   const [adjustAmount, setAdjustAmount] = useState('')
@@ -46,11 +74,32 @@ export default function Bank() {
   const handleQuarterPayout = async (quarter: number) => {
     if (!currentWorkspace) return
 
+    // Парсим введённую сумму
+    const enteredAmount = parseMoney(quarterPayoutAmount)
+    const maxAmount = confirmModal.maxAmount || 0
+
+    // Валидация: сумма не может быть больше максимальной
+    if (enteredAmount !== null && enteredAmount > maxAmount) {
+      setQuarterPayoutError(`Сумма не может превышать ${formatMoney(maxAmount)}`)
+      return
+    }
+
+    // Если сумма меньше максимальной, комментарий обязателен
+    if (enteredAmount !== null && enteredAmount < maxAmount && !quarterPayoutComment.trim()) {
+      setQuarterPayoutError('Укажите причину уменьшения суммы')
+      return
+    }
+
     setActionLoading(true)
     setActionError(null)
     setActionSuccess(null)
+    setQuarterPayoutError(null)
 
-    const result = await executeQuarterPayout(currentWorkspace.id, selectedYear, quarter)
+    // Если сумма не указана или равна максимальной, передаём undefined
+    const customAmount = enteredAmount !== null && enteredAmount < maxAmount ? enteredAmount : undefined
+    const comment = customAmount !== undefined ? quarterPayoutComment.trim() : undefined
+
+    const result = await executeQuarterPayout(currentWorkspace.id, selectedYear, quarter, customAmount, comment)
 
     if (!result.success) {
       setActionError(result.error?.message || 'Ошибка выплаты')
@@ -60,6 +109,8 @@ export default function Bank() {
     }
 
     setConfirmModal({ type: null })
+    setQuarterPayoutAmount('')
+    setQuarterPayoutComment('')
     setActionLoading(false)
   }
 
@@ -145,6 +196,63 @@ export default function Bank() {
     }
   }
 
+  // Amount cell renderer with color
+  const AmountCellRenderer = useCallback((params: ICellRendererParams<Ledger>) => {
+    const amount = params.value as number
+    const isPositive = amount >= 0
+    return (
+      <span className={isPositive ? 'text-success' : 'text-danger'} style={{ fontWeight: 600 }}>
+        {isPositive ? '+' : ''}{formatMoney(amount)}
+      </span>
+    )
+  }, [])
+
+  // Ledger column definitions
+  const ledgerColumnDefs = useMemo((): ColDef<Ledger>[] => {
+    return [
+      {
+        field: 'created_at',
+        headerName: 'Дата',
+        width: 100,
+        valueFormatter: (params: ValueFormatterParams) => {
+          return new Date(params.value).toLocaleDateString('ru-RU')
+        },
+      },
+      {
+        field: 'operation_type',
+        headerName: 'Операция',
+        flex: 1,
+        minWidth: 200,
+        valueFormatter: (params: ValueFormatterParams<Ledger>) => {
+          const label = getOperationLabel(params.value, params.data?.quarter)
+          const comment = params.data?.comment
+          return comment ? `${label} — ${comment}` : label
+        },
+      },
+      {
+        field: 'amount',
+        headerName: 'Сумма',
+        width: 130,
+        cellRenderer: AmountCellRenderer,
+        type: 'rightAligned',
+      },
+      {
+        field: 'balance_after',
+        headerName: 'Баланс',
+        width: 130,
+        valueFormatter: (params: ValueFormatterParams) => formatMoney(params.value),
+        cellStyle: { color: '#9b9a97' },
+        type: 'rightAligned',
+      },
+    ]
+  }, [AmountCellRenderer, getOperationLabel])
+
+  // Default column settings
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    resizable: true,
+  }), [])
+
   if (loading) {
     return (
       <div className="loading">
@@ -201,45 +309,55 @@ export default function Bank() {
           </div>
 
           {/* Квартальные выплаты */}
-          <div className="card mb-xl">
-            <div className="card-header">Квартальные выплаты</div>
-            <div className="quarters-list" style={{ marginTop: 'var(--spacing-md)' }}>
-              {quarters.map((q) => (
-                <div key={q.quarter} className="quarter-row">
-                  <div className="quarter-info">
-                    <span className="quarter-name">Q{q.quarter}</span>
-                    <span className="quarter-ebitda">
-                      EBITDA: {formatMoney(q.ebitda_sum)}
-                    </span>
-                    <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)' }}>
-                      Порог: {formatMoney(q.condition_threshold)}
-                    </span>
-                    {q.condition_met ? (
-                      <span className="badge badge-success">✓ Условие</span>
-                    ) : (
-                      <span className="badge badge-neutral">○ Условие</span>
-                    )}
-                  </div>
-                  <div className="quarter-actions">
-                    {q.payout_done ? (
-                      <span className="badge badge-success">✓ Выплачено</span>
-                    ) : q.condition_met && isAdmin && !yearData?.closed ? (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => setConfirmModal({ type: 'quarter', quarter: q.quarter, amount: q.payout_available })}
-                        disabled={actionLoading}
-                      >
-                        Выплатить {formatMoney(q.payout_available)}
-                      </button>
-                    ) : (
-                      <span className="text-muted">
-                        {q.payout_available > 0 ? `Доступно: ${formatMoney(q.payout_available)}` : '—'}
-                      </span>
-                    )}
+          <div className="mb-xl">
+            <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 600, marginBottom: 'var(--spacing-md)' }}>
+              Кварталы
+            </h2>
+            {quarters.map((q) => (
+              <div key={q.quarter}>
+                <QuarterProgress
+                  quarter={q.quarter}
+                  ebitdaSum={q.ebitda_sum}
+                  retentionTarget={q.condition_threshold}
+                  growthTarget={(yearData?.condition_threshold || 0) / 4}
+                />
+                <div className="card mb-lg" style={{ marginTop: '-8px', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+                  <div className="flex-between">
+                    <div className="flex gap-md" style={{ alignItems: 'center' }}>
+                      <span className="text-muted">К выплате из банка:</span>
+                      <strong>{formatMoney(q.payout_available)}</strong>
+                      {q.condition_met ? (
+                        <span className="badge badge-success">✓ Условие</span>
+                      ) : (
+                        <span className="badge badge-neutral">○ Условие</span>
+                      )}
+                    </div>
+                    <div>
+                      {q.payout_done ? (
+                        <span className="badge badge-success">✓ Выплачено</span>
+                      ) : q.condition_met && isAdmin && !yearData?.closed ? (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            setQuarterPayoutAmount(formatMoney(q.payout_available).replace(/[^\d]/g, ' ').trim())
+                            setQuarterPayoutComment('')
+                            setQuarterPayoutError(null)
+                            setConfirmModal({ type: 'quarter', quarter: q.quarter, amount: q.payout_available, maxAmount: q.payout_available })
+                          }}
+                          disabled={actionLoading}
+                        >
+                          Выплатить {formatMoney(q.payout_available)}
+                        </button>
+                      ) : (
+                        <span className="text-muted">
+                          {q.payout_available > 0 ? `Доступно: ${formatMoney(q.payout_available)}` : '—'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
 
           {/* Годовая выплата */}
@@ -343,26 +461,17 @@ export default function Bank() {
                 Нет операций
               </p>
             ) : (
-              <div style={{ marginTop: 'var(--spacing-md)' }}>
-                {ledger.map((l) => (
-                  <div key={l.id} className="ledger-item">
-                    <div className="ledger-info">
-                      <span className="ledger-date">
-                        {new Date(l.created_at).toLocaleDateString('ru-RU')}
-                      </span>
-                      <span className="ledger-description">
-                        {getOperationLabel(l.operation_type, l.quarter)}
-                        {l.comment && ` — ${l.comment}`}
-                      </span>
-                    </div>
-                    <div>
-                      <span className={`ledger-amount ${l.amount >= 0 ? 'positive' : 'negative'}`}>
-                        {l.amount >= 0 ? '+' : ''}{formatMoney(l.amount)}
-                      </span>
-                      <span className="ledger-balance">→ {formatMoney(l.balance_after)}</span>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ marginTop: 'var(--spacing-md)', height: Math.min(ledger.length * 42 + 48, 400) }}>
+                <AgGridReact<Ledger>
+                  theme={notionTheme}
+                  rowData={ledger}
+                  columnDefs={ledgerColumnDefs}
+                  defaultColDef={defaultColDef}
+                  domLayout="normal"
+                  suppressMovableColumns={true}
+                  suppressCellFocus={true}
+                  animateRows={false}
+                />
               </div>
             )}
           </div>
@@ -371,7 +480,12 @@ export default function Bank() {
 
       {/* Модал подтверждения */}
       {confirmModal.type && (
-        <div className="modal-overlay" onClick={() => setConfirmModal({ type: null })}>
+        <div className="modal-overlay" onClick={() => {
+          setConfirmModal({ type: null })
+          setQuarterPayoutAmount('')
+          setQuarterPayoutComment('')
+          setQuarterPayoutError(null)
+        }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">
@@ -382,9 +496,36 @@ export default function Bank() {
             </div>
             <div className="modal-body">
               {confirmModal.type === 'quarter' && (
-                <p>
-                  Выплатить <strong>{formatMoney(confirmModal.amount)}</strong> за Q{confirmModal.quarter}?
-                </p>
+                <>
+                  {quarterPayoutError && <div className="alert alert-error">{quarterPayoutError}</div>}
+                  <div className="form-group">
+                    <label className="form-label">
+                      Сумма выплаты (макс. {formatMoney(confirmModal.maxAmount)})
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={quarterPayoutAmount}
+                      onChange={(e) => {
+                        setQuarterPayoutAmount(formatInputValue(e.target.value))
+                        setQuarterPayoutError(null)
+                      }}
+                      placeholder={formatMoney(confirmModal.maxAmount)?.replace('₽', '').trim()}
+                    />
+                  </div>
+                  <div className="form-group mb-0">
+                    <label className="form-label">
+                      Комментарий {parseMoney(quarterPayoutAmount) !== null && parseMoney(quarterPayoutAmount)! < (confirmModal.maxAmount || 0) ? '(обязательно)' : '(опционально)'}
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={quarterPayoutComment}
+                      onChange={(e) => setQuarterPayoutComment(e.target.value)}
+                      placeholder="Причина изменения суммы"
+                    />
+                  </div>
+                </>
               )}
               {confirmModal.type === 'year' && (
                 <>
@@ -407,7 +548,12 @@ export default function Bank() {
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setConfirmModal({ type: null })}>
+              <button className="btn btn-secondary" onClick={() => {
+                setConfirmModal({ type: null })
+                setQuarterPayoutAmount('')
+                setQuarterPayoutComment('')
+                setQuarterPayoutError(null)
+              }}>
                 Отмена
               </button>
               <button

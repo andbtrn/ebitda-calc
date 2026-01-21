@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import { AgGridReact } from 'ag-grid-react'
+import type { ColDef, CellClassParams, ICellRendererParams, ValueFormatterParams } from 'ag-grid-community'
+import { themeQuartz } from 'ag-grid-community'
 import { useWorkspace } from '../contexts/WorkspaceContext'
 import { useYear } from '../hooks/useYear'
 import {
@@ -10,6 +13,28 @@ import {
   toggleMonthLock,
   MONTH_NAMES,
 } from '../lib/supabase'
+import type { Month } from '../types/database'
+
+// Custom theme based on Quartz with Notion-like styling
+const notionTheme = themeQuartz.withParams({
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+  fontSize: 13,
+  headerFontSize: 12,
+  headerFontWeight: 500,
+  headerTextColor: '#6b6b6b',
+  headerBackgroundColor: '#f7f6f3',
+  borderColor: '#e9e9e7',
+  rowHoverColor: '#f1f1ef',
+  selectedRowBackgroundColor: '#e8f4fd',
+  cellTextColor: '#37352f',
+  oddRowBackgroundColor: '#ffffff',
+  spacing: 8,
+  wrapperBorderRadius: 6,
+})
+
+interface MonthRow extends Month {
+  monthName: string
+}
 
 export default function Months() {
   const { currentWorkspace, isAdmin } = useWorkspace()
@@ -36,14 +61,14 @@ export default function Months() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
 
-  const handleOpenEditModal = (month: number, currentValue: number | null) => {
+  const handleOpenEditModal = useCallback((month: number, currentValue: number | null) => {
     if (!isAdmin) return
     setEditingMonth(month)
     setEditValue(currentValue !== null ? formatNumber(currentValue) : '')
     setEditComment('')
     setEditError(null)
     setShowEditModal(true)
-  }
+  }, [isAdmin])
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,7 +113,7 @@ export default function Months() {
     setEditError(null)
   }
 
-  const handleToggleLock = async (month: number, currentLocked: boolean) => {
+  const handleToggleLock = useCallback(async (month: number, currentLocked: boolean) => {
     if (!currentWorkspace || !isAdmin) return
 
     setSaving(true)
@@ -103,7 +128,7 @@ export default function Months() {
     }
 
     setSaving(false)
-  }
+  }, [currentWorkspace, isAdmin, selectedYear, refresh])
 
   const handleRecalculate = async () => {
     setSaving(true)
@@ -131,6 +156,155 @@ export default function Months() {
     setSaving(false)
   }
 
+  // Prepare row data with month names
+  const rowData = useMemo<MonthRow[]>(() => {
+    return months.map((m) => ({
+      ...m,
+      monthName: MONTH_NAMES[m.month - 1],
+    }))
+  }, [months])
+
+  // Money formatter
+  const moneyFormatter = (params: ValueFormatterParams) => {
+    if (params.value === null || params.value === undefined) return '—'
+    return formatMoney(params.value)
+  }
+
+  // EBITDA cell renderer with click-to-edit
+  const EbitdaCellRenderer = useCallback((params: ICellRendererParams<MonthRow>) => {
+    const data = params.data
+    if (!data) return null
+
+    const canEdit = !data.locked && !yearData?.closed && isAdmin
+
+    return (
+      <span
+        onClick={() => canEdit && handleOpenEditModal(data.month, data.ebitda)}
+        style={{
+          cursor: canEdit ? 'pointer' : 'default',
+          padding: '4px 8px',
+          borderRadius: '3px',
+          display: 'inline-block',
+        }}
+        className={canEdit ? 'input-inline' : ''}
+      >
+        {data.ebitda !== null ? formatMoney(data.ebitda) : '—'}
+      </span>
+    )
+  }, [isAdmin, yearData?.closed, handleOpenEditModal])
+
+  // Lock button cell renderer
+  const LockCellRenderer = useCallback((params: ICellRendererParams<MonthRow>) => {
+    const data = params.data
+    if (!data) return null
+
+    if (yearData?.closed) {
+      return <span>🔒</span>
+    }
+
+    if (!isAdmin) return null
+
+    return (
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => handleToggleLock(data.month, data.locked)}
+        title={data.locked ? 'Разблокировать' : 'Заблокировать'}
+        disabled={saving}
+      >
+        {data.locked ? '🔒' : '🔓'}
+      </button>
+    )
+  }, [isAdmin, yearData?.closed, saving, handleToggleLock])
+
+  // Column definitions
+  const columnDefs = useMemo((): ColDef<MonthRow>[] => {
+    const cols: ColDef<MonthRow>[] = [
+      {
+        field: 'monthName',
+        headerName: 'Месяц',
+        width: 120,
+        pinned: 'left',
+        cellStyle: { fontWeight: '600' },
+      },
+      {
+        field: 'ebitda',
+        headerName: 'EBITDA',
+        width: 130,
+        cellRenderer: EbitdaCellRenderer,
+        cellClass: (params: CellClassParams<MonthRow>) => {
+          return params.data?.ebitda === null ? 'ag-cell-empty' : ''
+        },
+      },
+      {
+        field: 'monthly_base',
+        headerName: 'База',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        cellStyle: { color: '#9b9a97' },
+        type: 'rightAligned',
+      },
+      {
+        field: 'retention',
+        headerName: 'Удержание',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        type: 'rightAligned',
+      },
+      {
+        field: 'growth_bonus',
+        headerName: 'Рост',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        type: 'rightAligned',
+      },
+      {
+        field: 'total_bonus',
+        headerName: 'Бонус',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        cellStyle: { fontWeight: '600' },
+        type: 'rightAligned',
+      },
+      {
+        field: 'paid_now',
+        headerName: 'Сейчас',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        type: 'rightAligned',
+      },
+      {
+        field: 'to_bank',
+        headerName: 'В банк',
+        width: 110,
+        valueFormatter: moneyFormatter,
+        type: 'rightAligned',
+      },
+      {
+        field: 'locked',
+        headerName: '',
+        width: 60,
+        cellRenderer: LockCellRenderer,
+        sortable: false,
+        filter: false,
+      },
+    ]
+    return cols
+  }, [EbitdaCellRenderer, LockCellRenderer])
+
+  // Default column settings
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    resizable: true,
+  }), [])
+
+  // Row class rules for locked rows
+  const getRowClass = useCallback((params: { data?: MonthRow }) => {
+    if (params.data?.locked) {
+      return 'ag-row-locked'
+    }
+    return ''
+  }, [])
+
   // Итоги
   const totals = months.reduce(
     (acc, m) => ({
@@ -143,6 +317,29 @@ export default function Months() {
     }),
     { ebitda: 0, retention: 0, growth_bonus: 0, total_bonus: 0, paid_now: 0, to_bank: 0 }
   )
+
+  // Pinned bottom row for totals
+  const pinnedBottomRowData = useMemo(() => [{
+    id: 'total',
+    monthName: 'Итого',
+    month: 0,
+    ebitda: totals.ebitda,
+    monthly_base: null,
+    retention: totals.retention,
+    growth_bonus: totals.growth_bonus,
+    total_bonus: totals.total_bonus,
+    paid_now: totals.paid_now,
+    to_bank: totals.to_bank,
+    locked: false,
+    workspace_id: '',
+    year: selectedYear,
+    comment: null,
+    config_id: null,
+    monthly_threshold: null,
+    bank_balance_after: 0,
+    created_at: '',
+    updated_at: '',
+  }], [totals, selectedYear])
 
   if (loading) {
     return (
@@ -219,82 +416,19 @@ export default function Months() {
           </button>
         </div>
       ) : (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: '120px' }}>Месяц</th>
-                <th className="text-right">EBITDA</th>
-                <th className="text-right">База</th>
-                <th className="text-right">Удержание</th>
-                <th className="text-right">Рост</th>
-                <th className="text-right">Бонус</th>
-                <th className="text-right">Сейчас</th>
-                <th className="text-right">В банк</th>
-                <th style={{ width: '50px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map((m) => (
-                <tr key={m.month} className={m.locked ? 'locked' : ''}>
-                  <td>
-                    <strong>{MONTH_NAMES[m.month - 1]}</strong>
-                  </td>
-                  <td className={`numeric ${m.ebitda === null ? 'empty' : ''}`}>
-                    <span
-                      onClick={() => !m.locked && !yearData?.closed && isAdmin && handleOpenEditModal(m.month, m.ebitda)}
-                      style={{
-                        cursor: m.locked || yearData?.closed || !isAdmin ? 'default' : 'pointer',
-                        padding: 'var(--spacing-xs) var(--spacing-sm)',
-                        borderRadius: 'var(--radius-sm)',
-                      }}
-                      className={!m.locked && !yearData?.closed && isAdmin ? 'input-inline' : ''}
-                    >
-                      {m.ebitda !== null ? formatMoney(m.ebitda) : '—'}
-                    </span>
-                  </td>
-                  <td className="numeric text-muted">{formatMoney(m.monthly_base)}</td>
-                  <td className="numeric">{formatMoney(m.retention)}</td>
-                  <td className="numeric">{formatMoney(m.growth_bonus)}</td>
-                  <td className="numeric">
-                    <strong>{formatMoney(m.total_bonus)}</strong>
-                  </td>
-                  <td className="numeric">{formatMoney(m.paid_now)}</td>
-                  <td className="numeric">{formatMoney(m.to_bank)}</td>
-                  <td className="text-center">
-                    {isAdmin && !yearData?.closed && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => handleToggleLock(m.month, m.locked)}
-                        title={m.locked ? 'Разблокировать' : 'Заблокировать'}
-                        disabled={saving}
-                      >
-                        {m.locked ? '🔒' : '🔓'}
-                      </button>
-                    )}
-                    {yearData?.closed && '🔒'}
-                  </td>
-                </tr>
-              ))}
-              <tr className="total">
-                <td>
-                  <strong>Итого</strong>
-                </td>
-                <td className="numeric">
-                  <strong>{formatMoney(totals.ebitda)}</strong>
-                </td>
-                <td></td>
-                <td className="numeric">{formatMoney(totals.retention)}</td>
-                <td className="numeric">{formatMoney(totals.growth_bonus)}</td>
-                <td className="numeric">
-                  <strong>{formatMoney(totals.total_bonus)}</strong>
-                </td>
-                <td className="numeric">{formatMoney(totals.paid_now)}</td>
-                <td className="numeric">{formatMoney(totals.to_bank)}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="ag-grid-wrapper" style={{ height: 'calc(12 * 42px + 90px)' }}>
+          <AgGridReact<MonthRow>
+            theme={notionTheme}
+            rowData={rowData}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            getRowClass={getRowClass}
+            pinnedBottomRowData={pinnedBottomRowData}
+            domLayout="normal"
+            suppressMovableColumns={true}
+            suppressCellFocus={true}
+            animateRows={false}
+          />
         </div>
       )}
 

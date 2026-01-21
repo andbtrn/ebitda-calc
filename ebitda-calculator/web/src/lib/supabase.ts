@@ -89,7 +89,9 @@ export async function recalculateYear(workspaceId: string, year: number) {
 export async function executeQuarterPayout(
   workspaceId: string,
   year: number,
-  quarter: number
+  quarter: number,
+  customAmount?: number,
+  comment?: string
 ) {
   return rpcCall<{ quarter: number; amount: number; balance_after: number }>(
     'execute_quarter_payout',
@@ -97,6 +99,8 @@ export async function executeQuarterPayout(
       p_workspace_id: workspaceId,
       p_year: year,
       p_quarter: quarter,
+      p_custom_amount: customAmount ?? null,
+      p_comment: comment ?? null,
     }
   )
 }

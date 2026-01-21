@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useWorkspace } from '../contexts/WorkspaceContext'
 import { useYear } from '../hooks/useYear'
 import { formatMoney } from '../lib/supabase'
+import QuarterProgress from '../components/QuarterProgress'
 
 export default function Dashboard() {
   const { currentWorkspace } = useWorkspace()
@@ -131,32 +132,37 @@ export default function Dashboard() {
           )}
 
           {/* Кварталы */}
-          <div className="card">
-            <div className="card-header">Кварталы</div>
-            <div className="quarters-list" style={{ marginTop: 'var(--spacing-md)' }}>
-              {quarters.map((q) => (
-                <div key={q.quarter} className="quarter-row">
-                  <div className="quarter-info">
-                    <span className="quarter-name">Q{q.quarter}</span>
-                    <span className="quarter-ebitda">{formatMoney(q.ebitda_sum)}</span>
-                    {q.condition_met ? (
-                      <span className="badge badge-success">✓ Условие</span>
-                    ) : (
-                      <span className="badge badge-neutral">○ Условие</span>
-                    )}
-                  </div>
-                  <div className="quarter-actions">
-                    {q.payout_done ? (
-                      <span className="badge badge-success">✓ Выплачено</span>
-                    ) : q.condition_met ? (
-                      <span className="badge badge-warning">Доступно {formatMoney(q.payout_available)}</span>
-                    ) : (
-                      <span className="badge badge-neutral">Ожидание</span>
-                    )}
+          <div>
+            <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 600, marginBottom: 'var(--spacing-md)' }}>
+              Кварталы
+            </h2>
+            {quarters.map((q) => (
+              <div key={q.quarter}>
+                <QuarterProgress
+                  quarter={q.quarter}
+                  ebitdaSum={q.ebitda_sum}
+                  retentionTarget={q.condition_threshold}
+                  growthTarget={(yearData?.condition_threshold || 0) / 4}
+                />
+                <div className="card mb-lg" style={{ marginTop: '-8px', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+                  <div className="flex-between">
+                    <div className="flex gap-md" style={{ alignItems: 'center' }}>
+                      <span className="text-muted">К выплате:</span>
+                      <strong>{formatMoney(q.payout_available)}</strong>
+                    </div>
+                    <div>
+                      {q.payout_done ? (
+                        <span className="badge badge-success">✓ Выплачено</span>
+                      ) : q.condition_met ? (
+                        <span className="badge badge-warning">Доступно</span>
+                      ) : (
+                        <span className="badge badge-neutral">Ожидание</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         </>
       )}

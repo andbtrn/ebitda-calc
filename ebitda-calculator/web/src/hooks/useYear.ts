@@ -23,6 +23,13 @@ interface UseYearReturn {
 export function useYear(initialYear?: number): UseYearReturn {
   const { currentWorkspace } = useWorkspace()
   const [year, setYear] = useState(initialYear || new Date().getFullYear())
+
+  // Синхронизируем внутренний year с переданным initialYear
+  useEffect(() => {
+    if (initialYear !== undefined) {
+      setYear(initialYear)
+    }
+  }, [initialYear])
   const [months, setMonths] = useState<Month[]>([])
   const [quarters, setQuarters] = useState<Quarter[]>([])
   const [yearData, setYearData] = useState<Year | null>(null)

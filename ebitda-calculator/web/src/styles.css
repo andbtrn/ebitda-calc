@@ -795,3 +795,139 @@ body {
 .gap-sm { gap: var(--spacing-sm); }
 .gap-md { gap: var(--spacing-md); }
 .gap-lg { gap: var(--spacing-lg); }
+
+/* =====================================================
+   QuarterProgress — компактный inline-вариант
+   ===================================================== */
+
+.quarter-progress-compact {
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.quarter-progress-compact-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.quarter-progress-compact-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.quarter-progress-compact-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+}
+
+.progress-row-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  min-width: 75px;
+}
+
+.progress-row-values {
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 140px;
+}
+
+.progress-row-bar {
+  flex: 1;
+  height: 6px;
+  background-color: var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 80px;
+  max-width: 200px;
+}
+
+.progress-row-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-row-bar-fill.fill-success {
+  background-color: var(--color-success);
+}
+
+.progress-row-bar-fill.fill-warning {
+  background-color: var(--color-warning);
+}
+
+.progress-row-percent {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-row-status {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  min-width: 16px;
+}
+
+.progress-row-diff {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  min-width: 50px;
+}
+
+.text-warning {
+  color: var(--color-warning);
+}
+
+/* =====================================================
+   AG Grid Custom Styles
+   ===================================================== */
+
+.ag-grid-wrapper {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Empty EBITDA cell highlight */
+.ag-cell-empty {
+  background-color: #fffdf0 !important;
+}
+
+/* Locked row styling */
+.ag-row-locked {
+  background-color: var(--color-bg-secondary) !important;
+}
+
+/* Pinned bottom row (totals) */
+.ag-floating-bottom .ag-row {
+  font-weight: 600;
+  background-color: var(--color-bg-secondary) !important;
+}
+
+/* Remove focus outline */
+.ag-cell:focus {
+  outline: none !important;
+  border: none !important;
+}
+
+/* Header text uppercase */
+.ag-header-cell-text {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
